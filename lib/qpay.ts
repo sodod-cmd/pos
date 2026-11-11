@@ -1,4 +1,5 @@
 import 'server-only'
+import type { BankApp } from '@/lib/pos-types'
 
 const BASE_URL = process.env.QPAY_BASE_URL ?? 'https://merchant.qpay.mn/v2'
 const DEMO_PAYMENT_DELAY_MS = 5000
@@ -66,6 +67,10 @@ export async function createInvoice(input: CreateInvoiceInput) {
       qrText: `qpay-demo://pay/${invoiceId}`,
       qrImage: undefined as string | undefined,
       shortUrl: undefined as string | undefined,
+      // Harmless placeholder links so the app list can be tried out without QPay credentials.
+      bankApps: ['Khan bank', 'Golomt bank', 'TDB online', 'State bank', 'Xac bank', 'socialpay'].map(
+        (name): BankApp => ({ name, description: name, link: `qpay-demo://pay/${invoiceId}` }),
+      ),
       demo: true,
     }
   }
@@ -75,6 +80,7 @@ export async function createInvoice(input: CreateInvoiceInput) {
     qr_text: string
     qr_image?: string
     qPay_shortUrl?: string
+    urls?: { name?: string; description?: string; logo?: string; link?: string }[]
   }>('/invoice', {
     invoice_code: process.env.QPAY_INVOICE_CODE,
     sender_invoice_no: input.orderNo,
@@ -89,6 +95,14 @@ export async function createInvoice(input: CreateInvoiceInput) {
     qrText: data.qr_text,
     qrImage: data.qr_image,
     shortUrl: data.qPay_shortUrl,
+    bankApps: (data.urls ?? [])
+      .filter((url) => url.link && url.name)
+      .map((url): BankApp => ({
+        name: url.name!,
+        description: url.description || url.name!,
+        logo: url.logo || undefined,
+        link: url.link!,
+      })),
     demo: false,
   }
 }

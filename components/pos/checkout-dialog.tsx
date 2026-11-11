@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { QRCodeSVG } from 'qrcode.react'
-import { CheckCircle2, ChevronDown, GraduationCap, Loader2, RefreshCw } from 'lucide-react'
+import { CheckCircle2, ChevronDown, GraduationCap, Landmark, Loader2, RefreshCw, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { formatMNT } from '@/lib/products'
-import { STUDENT_FIELD_LIMITS, cleanStudentInfo, formatStudent, type CheckResponse, type InvoiceResponse, type StudentInfo } from '@/lib/pos-types'
+import { STUDENT_FIELD_LIMITS, cleanStudentInfo, formatStudent, type BankApp, type CheckResponse, type InvoiceResponse, type StudentInfo } from '@/lib/pos-types'
 import { cn } from '@/lib/utils'
 import { useCart, type CartLine } from './cart-context'
 
@@ -39,6 +39,53 @@ function StudentSummary({ student }: { student?: StudentInfo }) {
       <span className="sr-only">Сурагч: </span>
       {formatStudent(student)}
     </p>
+  )
+}
+
+function BankAppList({ apps, open, onToggle }: { apps: BankApp[]; open: boolean; onToggle: () => void }) {
+  if (apps.length === 0) return null
+  return (
+    <div className="rounded-xl border border-border">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls="bank-apps"
+        className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left text-sm"
+      >
+        <Smartphone aria-hidden="true" className="size-4 shrink-0 text-primary" />
+        <span className="flex-1 font-medium">
+          Аппаар төлөх <span className="font-normal text-muted-foreground">({apps.length} банк)</span>
+        </span>
+        <ChevronDown aria-hidden="true" className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div id="bank-apps" className="border-t border-border p-3">
+          <p className="mb-3 text-xs text-muted-foreground">Энэ төхөөрөмж дээр суулгасан банкны аппаа сонгоход төлбөрийн цонх шууд нээгдэнэ.</p>
+          <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {apps.map((app) => (
+              <li key={`${app.name}-${app.link}`}>
+                <a
+                  href={app.link}
+                  className="flex h-full flex-col items-center gap-1.5 rounded-lg border border-border bg-card p-2 text-center transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  {app.logo ? (
+                    // Logos are hosted by QPay
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={app.logo} alt="" loading="lazy" className="size-10 rounded-lg object-contain" />
+                  ) : (
+                    <span className="flex size-10 items-center justify-center rounded-lg bg-muted">
+                      <Landmark aria-hidden="true" className="size-5 text-muted-foreground" />
+                    </span>
+                  )}
+                  <span className="line-clamp-2 text-[11px] leading-tight font-medium">{app.description}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -67,6 +114,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
   const [notice, setNotice] = useState<string | null>(null)
   const [student, setStudent] = useState(EMPTY_STUDENT)
   const [studentOpen, setStudentOpen] = useState(false)
+  const [appsOpen, setAppsOpen] = useState(false)
   const studentFilled = Object.values(student).some((value) => value.trim() !== '')
 
   function handleOpenChange(next: boolean) {
@@ -94,6 +142,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
         items: lines.map(({ productId, size, qty }) => ({ productId, size, qty })),
         student: info,
       })
+      setAppsOpen(false)
       setStep({ kind: 'pay', invoice, lines, student: info })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Алдаа гарлаа')
@@ -206,7 +255,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
             <DialogHeader>
               <DialogTitle className="text-lg">QPay-ээр төлбөр төлөх</DialogTitle>
               <DialogDescription>
-                Эцэг эх банкны аппаар QR кодыг уншуулж төлнө. Төлсний дараа «Төлбөр шалгах» товчийг дарна уу.
+                Эцэг эх банкны аппаар QR кодыг уншуулж, эсвэл «Аппаар төлөх» хэсгээс банкаа сонгож төлнө. Төлсний дараа «Төлбөр шалгах» товчийг дарна уу.
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-muted/50 p-5">
@@ -231,6 +280,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
               <p className="text-xs text-muted-foreground">Захиалгын дугаар: {step.invoice.orderNo}</p>
               <StudentSummary student={step.student} />
             </div>
+            <BankAppList apps={step.invoice.bankApps ?? []} open={appsOpen} onToggle={() => setAppsOpen((value) => !value)} />
             {step.invoice.demo && (
               <p className="rounded-lg bg-secondary px-3 py-2 text-xs leading-relaxed text-secondary-foreground">
                 Туршилтын горим: QPay нэвтрэх мэдээлэл тохируулаагүй тул төлбөр 5 секундийн дараа автоматаар баталгаажна.

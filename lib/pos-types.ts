@@ -1,3 +1,11 @@
+/** A bank/wallet app that can open the invoice directly (QPay `urls`). */
+export interface BankApp {
+  name: string
+  description: string
+  logo?: string
+  link: string
+}
+
 export interface InvoiceResponse {
   invoiceId: string
   orderNo: string
@@ -5,6 +13,7 @@ export interface InvoiceResponse {
   qrText: string
   qrImage?: string
   shortUrl?: string
+  bankApps: BankApp[]
   demo: boolean
 }
 
