@@ -1,4 +1,4 @@
-/** Result of an admin form action. Successful saves redirect, so there is no success state. */
+/** Result of an admin form action. Successful saves redirect, so there is no success state */
 export type AdminFormState = {
   status: 'idle' | 'invalid' | 'error' | 'success'
   message?: string
