@@ -5,7 +5,7 @@ import type { BankApp } from '@/lib/pos-types'
 /**
  * Bonum (mPay) QR payments. Bonum has no "is this invoice paid" call in our integration:
  * it reports payments to the webhook registered for the terminal (/api/bonum/webhook),
- * which records the payment on the order.
+ * which records the payment on the order. 
  */
 
 const BASE_URL = () => (process.env.BONUM_BASE_URL || 'https://apis.bonum.mn').replace(/\/+$/, '')
