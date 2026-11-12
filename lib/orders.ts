@@ -4,8 +4,8 @@ import { ObjectId, type Filter, type WithId } from 'mongodb'
 import { collections, escapeRegex } from '@/lib/db'
 import { moveOrderStock, type ActorRef } from '@/lib/inventory'
 import { ORDER_STATUS_LABELS, PENDING_STALE_MS, type OrderStatus } from '@/lib/order-status'
-import type { OrderItemInput, StudentInfo } from '@/lib/pos-types'
-import { checkPayment } from '@/lib/qpay'
+import { checkInvoicePayment } from '@/lib/payment'
+import type { OrderItemInput, PaymentSource, StudentInfo } from '@/lib/pos-types'
 import { ORDER_PREFIX } from '@/lib/school'
 import { startOfDay, startOfMonth } from '@/lib/time'
 
@@ -32,6 +32,8 @@ export type OrderDoc = {
   total: number
   itemCount: number
   invoiceId?: string
+  /** Which provider issued the invoice. Orders made before Bonum was added have none: QPay. */
+  paymentSource?: PaymentSource
   demo: boolean
   /** Optional: who the purchase is for, entered by the cashier. */
   student?: StudentInfo
@@ -164,12 +166,15 @@ export async function createPendingOrder(cart: { items: OrderItemDoc[]; total: n
   return orderNo
 }
 
-export async function attachInvoice(orderNo: string, invoiceId: string, demo: boolean) {
+export async function attachInvoice(orderNo: string, invoice: { invoiceId: string; source: PaymentSource; demo: boolean }) {
   const { orders } = await collections()
-  await orders.updateOne({ orderNo }, { $set: { invoiceId, demo, updatedAt: new Date() } })
+  await orders.updateOne(
+    { orderNo },
+    { $set: { invoiceId: invoice.invoiceId, paymentSource: invoice.source, demo: invoice.demo, updatedAt: new Date() } },
+  )
 }
 
-/** Used when QPay could not issue an invoice, so the order never existed for the customer. */
+/** Used when the payment provider could not issue an invoice, so the order never existed for the customer. */
 export async function discardOrder(orderNo: string) {
   const { orders } = await collections()
   await orders.deleteOne({ orderNo, status: 'pending' })
@@ -190,7 +195,7 @@ export async function findOrderByNo(orderNo: string) {
 /**
  * Marks an order paid and takes its goods out of stock. The status change is the lock:
  * only the request that moves the order out of pending/cancelled deducts stock, so the
- * cashier's check, the QPay callback and an admin re-check can race safely.
+ * cashier's check, the QPay callback, the Bonum webhook and an admin re-check can race safely.
  */
 async function markPaid(orderId: ObjectId, paidAmount: number) {
   const { orders } = await collections()
@@ -200,18 +205,36 @@ async function markPaid(orderId: ObjectId, paidAmount: number) {
     { $set: { status: 'paid', paidAmount, paidAt: now, updatedAt: now }, $unset: { cancelledAt: '' } },
     { returnDocument: 'after' },
   )
-  if (!doc) return
+  if (!doc) return false
   if (paidAmount < doc.total) console.warn(`[orders] ${doc.orderNo}: paid ${paidAmount} of ${doc.total}`)
   await moveOrderStock('sale', doc.orderNo, doc.items, null)
+  return true
 }
 
-/** Asks QPay whether the order's invoice is paid and records the payment once. */
-export async function syncPayment(order: Pick<Order, 'id' | 'status' | 'invoiceId' | 'paidAmount'>) {
+/** Asks the payment provider whether the order's invoice is paid and records the payment once. */
+export async function syncPayment(order: Pick<Order, 'id' | 'status' | 'invoiceId' | 'paidAmount' | 'paymentSource'>) {
   if (order.status === 'paid' || order.status === 'refunded') return { paid: true, paidAmount: order.paidAmount ?? 0 }
   if (!order.invoiceId) return { paid: false, paidAmount: 0 }
-  const result = await checkPayment(order.invoiceId)
+  const result = await checkInvoicePayment(order.paymentSource ?? 'qpay', order.invoiceId)
   if (result.paid) await markPaid(new ObjectId(order.id), result.paidAmount)
   return result
+}
+
+/**
+ * Records a payment the provider pushed to us (Bonum webhook, already checksum-verified).
+ * The order is found by its order number, which we sent as Bonum's transactionId, and
+ * must have been invoiced through the same provider.
+ */
+export async function recordProviderPayment(input: { source: PaymentSource; orderNo: string; invoiceId?: string; paidAmount?: number }) {
+  const { orders } = await collections()
+  const doc = await orders.findOne({ orderNo: input.orderNo, paymentSource: input.source })
+  if (!doc) return 'not-found' as const
+  if (input.invoiceId && doc.invoiceId && input.invoiceId !== doc.invoiceId) {
+    console.warn(`[orders] ${doc.orderNo}: webhook invoice ${input.invoiceId} differs from ${doc.invoiceId}`)
+  }
+  if (doc.status === 'paid' || doc.status === 'refunded') return 'already-paid' as const
+  const paidAmount = input.paidAmount && input.paidAmount > 0 ? input.paidAmount : doc.total
+  return (await markPaid(doc._id, paidAmount)) ? ('paid' as const) : ('already-paid' as const)
 }
 
 /* ─────────────────────────── Admin actions ─────────────────────────── */

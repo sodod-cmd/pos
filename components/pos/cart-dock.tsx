@@ -9,7 +9,7 @@ import { coverImage, formatMNT } from '@/lib/products'
 import { useCart } from './cart-context'
 import { CheckoutDialog } from './checkout-dialog'
 
-export function CartDock() {
+export function CartDock({ paymentLabel }: { paymentLabel: string }) {
   const { lines, count, total, setQty, remove, clear } = useCart()
   const [expanded, setExpanded] = useState(false)
   const [checkoutOpen, setCheckoutOpen] = useState(false)
@@ -169,7 +169,7 @@ export function CartDock() {
         </div>
       </div>
 
-      <CheckoutDialog open={checkoutOpen} onOpenChange={setCheckoutOpen} />
+      <CheckoutDialog open={checkoutOpen} onOpenChange={setCheckoutOpen} paymentLabel={paymentLabel} />
     </>
   )
 }

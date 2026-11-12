@@ -23,6 +23,7 @@ import {
 import { OrderStatusBadge } from '@/components/admin/order-status'
 import { BarList, SalesChart } from '@/components/admin/sales-chart'
 import { AdminLink, Badge, Card, CardHeader, EmptyState, formatNumber, timeAgo } from '@/components/admin/ui'
+import { PAYMENT_SOURCE_LABELS } from '@/lib/pos-types'
 import { requireAdmin } from '@/lib/auth/session'
 import { getDashboard, type StockAlert } from '@/lib/dashboard'
 import { PLACEHOLDER_IMAGE, formatMNT } from '@/lib/products'
@@ -137,12 +138,13 @@ export default async function DashboardPage() {
       action: { href: `/admin/users/${admin.id}/edit`, label: 'Нууц үг солих' },
     })
   }
-  if (!d.qpayConfigured) {
+  if (!d.paymentConfigured) {
+    const keys = d.paymentSource === 'bonum' ? 'BONUM_TERMINAL_ID, BONUM_SECRET_KEY, BONUM_CHECKSUM_KEY' : 'QPAY_USER, QPAY_PASS, QPAY_INVOICE_CODE'
     attention.push({
       tone: 'warning',
       icon: CreditCard,
-      title: 'QPay туршилтын горимд ажиллаж байна',
-      text: '.env дотор QPAY_USER, QPAY_PASS, QPAY_INVOICE_CODE тохируулаагүй тул төлбөр бодитоор авахгүй, 5 секундийн дараа автоматаар «төлөгдөнө».',
+      title: `${PAYMENT_SOURCE_LABELS[d.paymentSource]} туршилтын горимд ажиллаж байна`,
+      text: `.env дотор ${keys} тохируулаагүй тул төлбөр бодитоор авахгүй, 5 секундийн дараа автоматаар «төлөгдөнө».`,
     })
   }
   if (d.outOfStock.length > 0) {
@@ -159,7 +161,7 @@ export default async function DashboardPage() {
       tone: 'info',
       icon: Clock,
       title: `${d.stalePending} нэхэмжлэх төлөгдөөгүй үлдсэн`,
-      text: '30 минутаас дээш төлөгдөөгүй QPay нэхэмжлэх. Төлбөр орсон эсэхийг шалгах эсвэл цуцалж болно.',
+      text: '30 минутаас дээш төлөгдөөгүй нэхэмжлэх. Төлбөр орсон эсэхийг шалгах эсвэл цуцалж болно.',
       action: { href: '/admin/orders?status=pending&range=all', label: 'Шалгах' },
     })
   }
@@ -372,7 +374,7 @@ export default async function DashboardPage() {
           <EmptyState
             icon={ShoppingBag}
             title="Захиалга алга"
-            text="Борлуулалтын цэгээс QPay-ээр төлбөр авахад энд харагдана."
+            text="Борлуулалтын цэгээс төлбөр авахад энд харагдана."
             action={
               <AdminLink href="/" variant="primary">
                 <Plus aria-hidden="true" />

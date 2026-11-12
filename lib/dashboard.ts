@@ -4,7 +4,7 @@ import { stockStatus } from '@/lib/catalog'
 import { collections } from '@/lib/db'
 import { PENDING_STALE_MS, type OrderDoc } from '@/lib/orders'
 import { formatStudent } from '@/lib/pos-types'
-import { isQpayConfigured } from '@/lib/qpay'
+import { getDefaultPaymentSource, isPaymentConfigured } from '@/lib/payment'
 import { isS3Configured } from '@/lib/s3'
 import { DAY_MS, TIME_ZONE, dayKey, startOfDay, startOfMonth } from '@/lib/time'
 import type { Filter } from 'mongodb'
@@ -179,7 +179,8 @@ export async function getDashboard() {
       summary: [formatStudent(o.student), o.items.map((item) => `${item.name}${item.size ? ` (${item.size})` : ''} ×${item.qty}`).join(', ')].filter(Boolean).join(' — '),
     })),
     seedAdmins,
-    qpayConfigured: isQpayConfigured(),
+    paymentSource: getDefaultPaymentSource(),
+    paymentConfigured: isPaymentConfigured(),
     s3Configured: isS3Configured(),
   }
 }

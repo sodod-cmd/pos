@@ -12,7 +12,7 @@ function revalidateOrders(id: string) {
   revalidatePath(`/admin/orders/${id}`)
 }
 
-/** Asks QPay again, e.g. when the cashier closed the dialog before the payment came through. */
+/** Asks the payment provider again (Bonum: re-reads the webhook result), e.g. when the cashier closed the dialog before the payment came through. */
 export async function recheckPayment(id: string) {
   await requireAdmin()
   const order = await getOrderById(id)

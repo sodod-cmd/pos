@@ -1,4 +1,12 @@
-/** A bank/wallet app that can open the invoice directly (QPay `urls`). */
+export const PAYMENT_SOURCES = ['qpay', 'bonum'] as const
+export type PaymentSource = (typeof PAYMENT_SOURCES)[number]
+
+export const PAYMENT_SOURCE_LABELS: Record<PaymentSource, string> = {
+  qpay: 'QPay',
+  bonum: 'Bonum',
+}
+
+/** A bank/wallet app that can open the invoice directly (QPay `urls`, Bonum `links`). */
 export interface BankApp {
   name: string
   description: string
@@ -7,10 +15,12 @@ export interface BankApp {
 }
 
 export interface InvoiceResponse {
+  source: PaymentSource
   invoiceId: string
   orderNo: string
   amount: number
   qrText: string
+  /** Ready to use as an <img src> (data URI or URL). */
   qrImage?: string
   shortUrl?: string
   bankApps: BankApp[]

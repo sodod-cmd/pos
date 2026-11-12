@@ -11,14 +11,15 @@ import { OrderStatusBadge } from '@/components/admin/order-status'
 import { Card, CardHeader, DetailList, PageHeader, adminButton, formatDateTime } from '@/components/admin/ui'
 import { requireAdmin } from '@/lib/auth/session'
 import { getOrderById } from '@/lib/orders'
+import { PAYMENT_SOURCE_LABELS } from '@/lib/pos-types'
 import { PLACEHOLDER_IMAGE, formatMNT } from '@/lib/products'
 
 export const metadata: Metadata = { title: 'Захиалга' }
 
 const flashes: Record<string, FlashMessage> = {
   paid: { tone: 'success', text: 'Төлбөр баталгаажлаа. Бараа үлдэгдлээс хасагдсан.' },
-  unpaid: { tone: 'warning', text: 'QPay дээр төлбөр хараахан ороогүй байна.' },
-  'check-failed': { tone: 'warning', text: 'QPay-тэй холбогдож чадсангүй. Түр хүлээгээд дахин шалгана уу.' },
+  unpaid: { tone: 'warning', text: 'Төлбөр хараахан ороогүй байна. Bonum-ын төлбөр webhook-ээр ирж баталгаажна.' },
+  'check-failed': { tone: 'warning', text: 'Төлбөрийн системтэй холбогдож чадсангүй. Түр хүлээгээд дахин шалгана уу.' },
   cancelled: { tone: 'success', text: 'Захиалга цуцлагдлаа.' },
   'not-pending': { tone: 'warning', text: 'Зөвхөн төлбөр хүлээгдэж буй захиалгыг цуцлах боломжтой.' },
   refunded: { tone: 'success', text: 'Буцаалт бүртгэгдэж, бараа үлдэгдэлд буцаж нэмэгдлээ.' },
@@ -125,7 +126,7 @@ export default async function OrderDetailPage({ params, searchParams }: { params
               ...(order.refundedAt ? ([['Буцаасан', formatDateTime(order.refundedAt)]] as [string, string][]) : []),
               ...(order.handledBy ? ([['Хариуцсан', order.handledBy.name]] as [string, string][]) : []),
               ...(order.note ? ([['Тэмдэглэл', order.note]] as [string, string][]) : []),
-              ['Төлбөрийн хэрэгсэл', order.demo ? 'QPay (туршилтын горим)' : 'QPay'],
+              ['Төлбөрийн хэрэгсэл', `${PAYMENT_SOURCE_LABELS[order.paymentSource ?? 'qpay']}${order.demo ? ' (туршилтын горим)' : ''}`],
               ['Нэхэмжлэх', <span key="inv" className="font-mono text-xs break-all">{order.invoiceId ?? '—'}</span>],
             ]}
           />

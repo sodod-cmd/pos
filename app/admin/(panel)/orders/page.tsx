@@ -48,7 +48,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       <PageHeader
         eyebrow="Борлуулалт"
         title="Захиалга, худалдан авалт"
-        description="Борлуулалтын цэгээр үүссэн QPay нэхэмжлэх бүр. Төлөгдсөн захиалгын бараа үлдэгдлээс автоматаар хасагдана."
+        description="Борлуулалтын цэгээр үүссэн QPay / Bonum нэхэмжлэх бүр. Төлөгдсөн захиалгын бараа үлдэгдлээс автоматаар хасагдана."
         actions={
           <a href={`/admin/orders/export?${exportParams}`} className={adminButton({ variant: 'outline' })}>
             <Download aria-hidden="true" />

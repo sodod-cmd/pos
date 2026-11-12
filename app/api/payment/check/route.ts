@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { findOrderByInvoice, syncPayment } from '@/lib/orders'
 import type { CheckResponse } from '@/lib/pos-types'
 
-const INVOICE_ID_PATTERN = /^[A-Za-z0-9_-]{6,64}$/
+const INVOICE_ID_PATTERN = /^[A-Za-z0-9_.:-]{6,128}$/
 
 export async function POST(request: Request) {
   let invoiceId: unknown
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     const result: CheckResponse = { paid, paidAmount }
     return NextResponse.json(result)
   } catch (error) {
-    console.error('[qpay] Check error:', error instanceof Error ? error.message : error)
+    console.error('[payment] Check error:', error instanceof Error ? error.message : error)
     return NextResponse.json({ error: 'Төлбөр шалгаж чадсангүй' }, { status: 502 })
   }
 }

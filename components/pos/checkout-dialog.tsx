@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { QRCodeSVG } from 'qrcode.react'
 import { CheckCircle2, ChevronDown, GraduationCap, Landmark, Loader2, RefreshCw, Smartphone } from 'lucide-react'
@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { formatMNT } from '@/lib/products'
-import { STUDENT_FIELD_LIMITS, cleanStudentInfo, formatStudent, type BankApp, type CheckResponse, type InvoiceResponse, type StudentInfo } from '@/lib/pos-types'
+import { PAYMENT_SOURCE_LABELS, STUDENT_FIELD_LIMITS, cleanStudentInfo, formatStudent, type BankApp, type CheckResponse, type InvoiceResponse, type StudentInfo } from '@/lib/pos-types'
 import { cn } from '@/lib/utils'
 import { useCart, type CartLine } from './cart-context'
 
@@ -24,6 +24,9 @@ type Step =
   | { kind: 'paid'; invoice: InvoiceResponse; lines: CartLine[]; student?: StudentInfo; paidAmount: number }
 
 const EMPTY_STUDENT = { studentName: '', className: '', studentCode: '' }
+// While the QR is on screen the payment is checked in the background, so a payment that
+// lands (QPay callback, Bonum webhook) shows up without the cashier pressing anything.
+const AUTO_CHECK_INTERVAL_MS = 3000
 
 const STUDENT_FIELDS = [
   { key: 'studentName', label: 'Сурагчийн нэр', placeholder: 'Б. Бат-Эрдэнэ', autoComplete: 'off', span: true },
@@ -70,7 +73,7 @@ function BankAppList({ apps, open, onToggle }: { apps: BankApp[]; open: boolean;
                   className="flex h-full flex-col items-center gap-1.5 rounded-lg border border-border bg-card p-2 text-center transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
                 >
                   {app.logo ? (
-                    // Logos are hosted by QPay
+                    // Logos are hosted by the payment provider
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={app.logo} alt="" loading="lazy" className="size-10 rounded-lg object-contain" />
                   ) : (
@@ -92,6 +95,8 @@ function BankAppList({ apps, open, onToggle }: { apps: BankApp[]; open: boolean;
 interface CheckoutDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Provider chosen by DEFAULT_PAYMENT_SOURCE, shown on the button before an invoice exists. */
+  paymentLabel?: string
 }
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
@@ -105,7 +110,7 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   return data as T
 }
 
-export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
+export function CheckoutDialog({ open, onOpenChange, paymentLabel = 'QPay' }: CheckoutDialogProps) {
   const { lines, total, clear } = useCart()
   const router = useRouter()
   const [step, setStep] = useState<Step>({ kind: 'review' })
@@ -138,7 +143,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
     setError(null)
     try {
       const info = cleanStudentInfo(student)
-      const invoice = await postJson<InvoiceResponse>('/api/qpay/invoice', {
+      const invoice = await postJson<InvoiceResponse>('/api/payment/invoice', {
         items: lines.map(({ productId, size, qty }) => ({ productId, size, qty })),
         student: info,
       })
@@ -153,26 +158,60 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
     }
   }
 
-  async function checkPayment() {
-    if (step.kind !== 'pay') return
-    setBusy(true)
-    setError(null)
-    setNotice(null)
-    try {
-      const result = await postJson<CheckResponse>('/api/qpay/check', {
-        invoiceId: step.invoice.invoiceId,
-      })
-      if (result.paid) {
-        setStep({ ...step, kind: 'paid', paidAmount: result.paidAmount })
-      } else {
-        setNotice('Төлбөр хараахан баталгаажаагүй байна. Түр хүлээгээд дахин шалгана уу.')
+  const checking = useRef(false)
+  const payInvoiceId = step.kind === 'pay' ? step.invoice.invoiceId : null
+
+  const checkPayment = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (step.kind !== 'pay' || checking.current) return
+      checking.current = true
+      if (!silent) {
+        setBusy(true)
+        setError(null)
+        setNotice(null)
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Алдаа гарлаа')
-    } finally {
-      setBusy(false)
+      try {
+        const result = await postJson<CheckResponse>('/api/payment/check', {
+          invoiceId: step.invoice.invoiceId,
+        })
+        if (result.paid) {
+          setNotice(null)
+          setError(null)
+          setStep({ ...step, kind: 'paid', paidAmount: result.paidAmount })
+        } else if (!silent) {
+          setNotice('Төлбөр хараахан баталгаажаагүй байна. Төлбөр орсон даруйд энэ цонх автоматаар шинэчлэгдэнэ.')
+        }
+      } catch (err) {
+        if (!silent) setError(err instanceof Error ? err.message : 'Алдаа гарлаа')
+      } finally {
+        checking.current = false
+        if (!silent) setBusy(false)
+      }
+    },
+    [step],
+  )
+
+  const checkRef = useRef(checkPayment)
+  useEffect(() => {
+    checkRef.current = checkPayment
+  }, [checkPayment])
+
+  useEffect(() => {
+    if (!open || !payInvoiceId) return
+    const tick = () => void checkRef.current({ silent: true })
+    const timer = window.setInterval(tick, AUTO_CHECK_INTERVAL_MS)
+    // Coming back from a bank app (deeplink) or another tab: check right away.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick()
     }
-  }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', tick)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', tick)
+    }
+  }, [open, payInvoiceId])
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -182,7 +221,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
             <DialogHeader>
               <DialogTitle className="text-lg">Захиалга баталгаажуулах</DialogTitle>
               <DialogDescription>
-                Захиалгаа шалгаад QPay нэхэмжлэх үүсгэнэ үү.
+                Захиалгаа шалгаад {paymentLabel} нэхэмжлэх үүсгэнэ үү.
               </DialogDescription>
             </DialogHeader>
             <ul className="flex flex-col divide-y divide-border rounded-xl border border-border">
@@ -245,7 +284,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
             )}
             <Button onClick={createInvoice} disabled={busy || lines.length === 0} className="h-12 text-base">
               {busy && <Loader2 aria-hidden="true" className="animate-spin" />}
-              QPay-ээр төлөх
+              {paymentLabel}-ээр төлөх
             </Button>
           </>
         )}
@@ -253,7 +292,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
         {step.kind === 'pay' && (
           <>
             <DialogHeader>
-              <DialogTitle className="text-lg">QPay-ээр төлбөр төлөх</DialogTitle>
+              <DialogTitle className="text-lg">{PAYMENT_SOURCE_LABELS[step.invoice.source]}-ээр төлбөр төлөх</DialogTitle>
               <DialogDescription>
                 Эцэг эх банкны аппаар QR кодыг уншуулж, эсвэл «Аппаар төлөх» хэсгээс банкаа сонгож төлнө. Төлсний дараа «Төлбөр шалгах» товчийг дарна уу.
               </DialogDescription>
@@ -261,18 +300,18 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
             <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-muted/50 p-5">
               <div className="rounded-xl bg-card p-3 shadow-sm">
                 {step.invoice.qrImage ? (
-                  // QPay supplies the QR as a base64 PNG
+                  // The server hands over a ready-to-use data URI or URL
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={`data:image/png;base64,${step.invoice.qrImage}`}
-                    alt="QPay төлбөрийн QR код"
+                    src={step.invoice.qrImage}
+                    alt={`${PAYMENT_SOURCE_LABELS[step.invoice.source]} төлбөрийн QR код`}
                     className="size-56"
                   />
                 ) : (
                   <QRCodeSVG
                     value={step.invoice.qrText}
                     size={224}
-                    title="QPay төлбөрийн QR код"
+                    title={`${PAYMENT_SOURCE_LABELS[step.invoice.source]} төлбөрийн QR код`}
                   />
                 )}
               </div>
@@ -283,7 +322,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
             <BankAppList apps={step.invoice.bankApps ?? []} open={appsOpen} onToggle={() => setAppsOpen((value) => !value)} />
             {step.invoice.demo && (
               <p className="rounded-lg bg-secondary px-3 py-2 text-xs leading-relaxed text-secondary-foreground">
-                Туршилтын горим: QPay нэвтрэх мэдээлэл тохируулаагүй тул төлбөр 5 секундийн дараа автоматаар баталгаажна.
+                Туршилтын горим: {PAYMENT_SOURCE_LABELS[step.invoice.source]} нэвтрэх мэдээлэл тохируулаагүй тул төлбөр 5 секундийн дараа автоматаар баталгаажна.
               </p>
             )}
             <div aria-live="polite" className="min-h-5 text-sm">
@@ -295,7 +334,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
               )}
             </div>
             <div className="flex flex-col gap-2">
-              <Button onClick={checkPayment} disabled={busy} className="h-12 text-base">
+              <Button onClick={() => checkPayment()} disabled={busy} className="h-12 text-base">
                 {busy ? (
                   <Loader2 aria-hidden="true" className="animate-spin" />
                 ) : (

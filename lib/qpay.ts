@@ -2,11 +2,6 @@ import 'server-only'
 import type { BankApp } from '@/lib/pos-types'
 
 const BASE_URL = process.env.QPAY_BASE_URL ?? 'https://merchant.qpay.mn/v2'
-const DEMO_PAYMENT_DELAY_MS = 5000
-
-export function isDemoInvoice(invoiceId: string) {
-  return invoiceId.startsWith('DEMO-')
-}
 
 // .env uses QPAY_USER / QPAY_PASS; the longer names are still accepted.
 const qpayUser = () => process.env.QPAY_USER || process.env.QPAY_USERNAME
@@ -59,22 +54,7 @@ interface CreateInvoiceInput {
   callbackUrl: string
 }
 
-export async function createInvoice(input: CreateInvoiceInput) {
-  if (!isQpayConfigured()) {
-    const invoiceId = `DEMO-${Date.now()}-${input.amount}`
-    return {
-      invoiceId,
-      qrText: `qpay-demo://pay/${invoiceId}`,
-      qrImage: undefined as string | undefined,
-      shortUrl: undefined as string | undefined,
-      // Harmless placeholder links so the app list can be tried out without QPay credentials.
-      bankApps: ['Khan bank', 'Golomt bank', 'TDB online', 'State bank', 'Xac bank', 'socialpay'].map(
-        (name): BankApp => ({ name, description: name, link: `qpay-demo://pay/${invoiceId}` }),
-      ),
-      demo: true,
-    }
-  }
-
+export async function createQpayInvoice(input: CreateInvoiceInput) {
   const data = await qpayFetch<{
     invoice_id: string
     qr_text: string
@@ -103,19 +83,10 @@ export async function createInvoice(input: CreateInvoiceInput) {
         logo: url.logo || undefined,
         link: url.link!,
       })),
-    demo: false,
   }
 }
 
-export async function checkPayment(invoiceId: string) {
-  if (isDemoInvoice(invoiceId)) {
-    const match = /^DEMO-(\d+)-(\d+)$/.exec(invoiceId)
-    if (!match) throw new Error('Нэхэмжлэх олдсонгүй')
-    const [, createdAt, amount] = match
-    const paid = Date.now() - Number(createdAt) >= DEMO_PAYMENT_DELAY_MS
-    return { paid, paidAmount: paid ? Number(amount) : 0 }
-  }
-
+export async function checkQpayPayment(invoiceId: string) {
   const data = await qpayFetch<{
     count: number
     paid_amount?: number
